@@ -1,2 +1,2 @@
 # Audra
-A lightweight, type-safe ASGI in Python
+A lightweight, type-safe ASGI Framework in Python
