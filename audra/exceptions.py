@@ -82,7 +82,7 @@ class BaseHTTPException(AudraException):
     status: int
 
     def __init__(self, *, status: int | None = None, details: str | None = None, headers: Headers | None = None) -> None:
-        self.status = (self.status or status) or 500
+        self.status = getattr(self, "status", status) or 500
         self.details = details or http.HTTPStatus(self.status).phrase
 
 
