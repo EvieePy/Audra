@@ -15,6 +15,7 @@ limitations under the License.
 
 from __future__ import annotations
 
+from functools import cache
 from types import MappingProxyType
 from typing import Any
 
@@ -84,6 +85,9 @@ class FrozenHeaders(Headers):
     def __init__(self, headers: dict[str, BytesOrStr]) -> None:
         super().__init__(headers)
 
+    def __hash__(self) -> int:  # type: ignore
+        return hash(repr(sorted(self.items())))
+
     def __setattr__(self, name: str, value: BytesOrStr, /) -> None:
         raise AttributeError(f"{self.__class__.__name__!r} items cannot be set.")
 
@@ -93,8 +97,10 @@ class FrozenHeaders(Headers):
     def __ior__(self, other: object, /) -> Headers:
         raise NotImplementedError(f"{self.__class__.__name__!r} cannot be combined.")
 
-    def as_tuple(self) -> list[tuple[bytes, bytes]]:
+    @cache
+    def as_tuple(self) -> list[tuple[bytes, bytes]]:  # type: ignore
         return [(k.encode(), v.encode() if isinstance(v, str) else v) for k, v in self.items()]
 
-    def as_dict(self) -> MappingProxyType[str, BytesOrStr]:
+    @cache
+    def as_dict(self) -> MappingProxyType[str, BytesOrStr]:  # type: ignore
         return MappingProxyType(self)
