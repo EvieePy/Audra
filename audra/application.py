@@ -21,20 +21,22 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 from .enums import ReceiveEvent, SendEvent
 from .exceptions import *
 from .middleware import ASGIMiddleware, ExceptionMiddleware, Middleware
-from .routes import Router
+from .routes import Route, Router
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from types_ import (
         ASGIApp,
+        HTTPMethod,
         HTTPScope,
         LifespanCallbackT,
         LifespanMessageT,
         LifespanScope,
         Receive,
         ReceiveLS,
+        RouteCallbackT,
         Scope,
         Send,
         State,
@@ -106,7 +108,7 @@ class Audra:
         return inst
 
     def __init__(
-        self, *, build_on_startup: bool = True, middleware: list[Middleware | ASGIMiddleware] | None = None
+        self, *, build_on_startup: bool = True, middleware: Sequence[Middleware | ASGIMiddleware] | None = None
     ) -> None:
         self._router: Router = Router()
         self._build_on_startup = build_on_startup
@@ -189,3 +191,9 @@ class Audra:
 
                 await send({"type": SendEvent.LSShutdownComplete.value})
                 break
+
+    def create_route(self, path: str, methods: list[HTTPMethod], *, callback: RouteCallbackT) -> None:
+        self._router._routes[path] = Route(callback, path=path, methods=methods)
+
+    def add_route(self, route: Route) -> None:
+        self._router._routes[route._path] = route
