@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 from .enums import ReceiveEvent, SendEvent
 from .exceptions import *
 from .middleware import ASGIMiddleware, ExceptionMiddleware, Middleware
-from .routes import RouterMiddleware
+from .routes import Router
 
 
 if TYPE_CHECKING:
@@ -108,7 +108,7 @@ class Audra:
     def __init__(
         self, *, build_on_startup: bool = True, middleware: list[Middleware | ASGIMiddleware] | None = None
     ) -> None:
-        self._router: RouterMiddleware = RouterMiddleware()
+        self._router: Router = Router()
         self._build_on_startup = build_on_startup
         self._user_middleware = middleware or []
 

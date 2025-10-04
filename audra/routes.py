@@ -17,10 +17,13 @@ from .enums import SendEvent
 from .middleware.base import Middleware
 
 
+__all__ = ("Route", "Router")
+
+
 class Route: ...
 
 
-class RouterMiddleware(Middleware):
+class Router(Middleware):
     async def __call__(self, scope: ..., receive: ..., send: ...) -> ...:
         await send({"type": SendEvent.HTTPResponseStart.value, "status": 200})
         await send({"type": SendEvent.HTTPResponseBody.value, "body": b"Hello World!"})
