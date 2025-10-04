@@ -73,7 +73,7 @@ class Headers(dict[str, BytesOrStr]):
         return super().__ior__(other)
 
     def as_tuple(self) -> list[tuple[bytes, bytes]]:
-        return [(k.encode(), v.encode() if isinstance(v, str) else v) for k, v in self.items()]
+        return [(k.encode("latin-1"), v.encode("latin-1") if isinstance(v, str) else v) for k, v in self.items()]
 
     def as_dict(self) -> MappingProxyType[str, BytesOrStr]:
         return MappingProxyType(self)
@@ -99,7 +99,7 @@ class FrozenHeaders(Headers):
 
     @cache
     def as_tuple(self) -> list[tuple[bytes, bytes]]:  # type: ignore
-        return [(k.encode(), v.encode() if isinstance(v, str) else v) for k, v in self.items()]
+        return [(k.encode("latin-1"), v.encode("latin-1") if isinstance(v, str) else v) for k, v in self.items()]
 
     @cache
     def as_dict(self) -> MappingProxyType[str, BytesOrStr]:  # type: ignore
