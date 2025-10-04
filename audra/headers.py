@@ -29,7 +29,7 @@ type BytesOrStr = bytes | str
 class Headers(dict[str, BytesOrStr]):
     __slots__ = ()
 
-    def __init__(self, headers: dict[str, BytesOrStr]) -> None:
+    def __init__(self, headers: dict[str, BytesOrStr] | None = None) -> None:
         self.update({k.casefold(): v for k, v in (headers or {}).items()})
 
     def __str__(self) -> str:
