@@ -18,5 +18,6 @@ __version__ = ""
 
 from .application import *
 from .exceptions import *
+from .headers import *
 from .middleware import *
 from .types_ import Receive as Receive, Scope as Scope, Send as Send
