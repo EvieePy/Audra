@@ -105,7 +105,9 @@ class Audra:
 
         return inst
 
-    def __init__(self, *, build_on_startup: bool = True, middleware: list[Middleware | ASGIMiddleware] | None = None) -> None:
+    def __init__(
+        self, *, build_on_startup: bool = True, middleware: list[Middleware | ASGIMiddleware] | None = None
+    ) -> None:
         self._router: RouterMiddleware = RouterMiddleware()
         self._build_on_startup = build_on_startup
         self._user_middleware = middleware or []
