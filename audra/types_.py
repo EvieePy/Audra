@@ -21,6 +21,7 @@ from typing import Any, Concatenate, Literal, NotRequired, ParamSpec, Protocol, 
 
 __all__ = (
     "HTTPASGI",
+    "HTTPMethod",
     "HTTPScope",
     "LifespanCallbackT",
     "LifespanCallbackT",
@@ -51,6 +52,9 @@ type ReceiveLS = Callable[[], Awaitable[LifespanMessageT]]
 type Receive = Callable[[], Awaitable[Message]]
 type Send = Callable[[Message], Awaitable[None]]
 
+# TODO: vvv
+type RouteCallbackT = Callable[..., Awaitable[Any]]
+
 
 # TODO: Other types...
 # NOTE: Injection type...
@@ -58,6 +62,8 @@ type LifespanCallbackT = (
     Callable[Concatenate[Any, State | None, ...], Coroutine[Any, Any, None]]
     | Callable[Concatenate[State | None, ...], Coroutine[Any, Any, None]]
 )
+
+type HTTPMethod = Literal["GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE", "POST", "PATCH", "CONNECT"]
 
 
 class ASGIApp(Protocol):
@@ -80,7 +86,7 @@ class HTTPScope(TypedDict):
     type: Literal["http"]
     asgi: HTTPASGI
     http_version: Literal["1.0", "1.1", "2"]
-    method: Literal["GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE", "POST", "PATCH", "CONNECT"]
+    method: HTTPMethod
     scheme: Literal["http", "https"] | str
     path: str
     raw_path: bytes
