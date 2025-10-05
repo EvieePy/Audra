@@ -1,4 +1,4 @@
-"""Copyright 2025 EvieePy
+"""Copyright © 2025, EvieePy
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,12 +15,13 @@ limitations under the License.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
-from .exceptions import HTTPNotFound, MiddlewareLoadException
+from .exceptions import HTTPMethodNotAllowed, HTTPNotFound, HTTPNotImplemented, MiddlewareLoadException, RouteAlreadyExists
 from .middleware.base import ASGIMiddleware, Middleware
 from .responses import TestResponse
 from .types_ import Callable, HTTPMethod, Receive, RouteCallbackT, Scope, Send
+from .utils import get_route_path
 
 
 if TYPE_CHECKING:
@@ -41,6 +42,15 @@ class TestReq:
 
 
 class Route(Middleware):
+    __route_name__: str
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        inst = super().__new__(cls)
+        name = kwargs.get("name", args[0].__name__)
+        inst.__route_name__ = name
+
+        return inst
+
     def __init__(
         self,
         coro: RouteCallbackT,
@@ -58,12 +68,19 @@ class Route(Middleware):
         self._path = path
         self._coro = coro
 
+    def match(self, path: str, method: HTTPMethod) -> bool | None:
+        # True: Full Match
+        # False: No Match
+        # None: Partial Match (E.g. Path matches but method isn't allowed)
+
+        # First case can shortcut and doesn't need to do any parameter matching...
+        if path == self._path:
+            return True if method in self._methods else None
+
     async def _build_middleware(self) -> None:
         prev = self
 
         for m in reversed(self._middleware):
-            m.app = prev
-
             if isinstance(m, Middleware) and not m.__has_loaded__:
                 try:
                     await m.on_load()
@@ -71,6 +88,7 @@ class Route(Middleware):
                 except Exception as e:
                     raise MiddlewareLoadException(f"The Middleware {prev!r} failed to load on route {self!r}.") from e
 
+            m.app = prev
             prev = m
 
         self.app = prev
@@ -80,8 +98,15 @@ class Route(Middleware):
         await self._build_middleware()
 
     async def invoke(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            raise HTTPNotImplemented
+
         if not self.__has_loaded__:
             await self._build_middleware()
+
+        method = scope["method"]
+        if method not in self._methods:
+            raise HTTPMethodNotAllowed
 
         await self.app(scope, receive, send)
 
@@ -98,16 +123,30 @@ class Route(Middleware):
 
 class Router(Middleware):
     def __init__(self) -> None:
-        # NOTE: Testing...
-        self._routes: dict[str, Route] = {}
+        self._routes: list[Route] = []
+
+    def add_route(self, route: Route) -> None:
+        # TODO: Check for duplicates...
+        self._routes.append(route)
+
+    def resolve_path(self, path: str) -> Route | None:
+        for route in self._routes:
+            ...
+
+    def find_route(self, scope: Scope) -> Route | None:
+        assert scope["type"] == "http"
+
+        path: str = get_route_path(scope)
+        route = self.resolve_path(path)
+
+        return route
 
     # NOTE: Testing...
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             return
 
-        print(scope["path"])
-        route_ = self._routes.get(scope["path"])
+        route_ = self.find_route(scope)
         print(route_)
 
         if not route_:
@@ -146,12 +185,10 @@ class route(metaclass=_RouteDecoMeta):  # reason: class decorator...
         middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
     ) -> Route:
         if isinstance(func, Route):
-            func._methods.update(methods)
-
-            if middleware:
-                func._middleware.extend(list(middleware))
-
-            return func
+            raise RouteAlreadyExists(
+                f"{func.__route_name__!r} is already a Route. "
+                f"Consider using the '@route(path='{path}', methods=[...])' decorator to pass multiple methods instead."
+            )
 
         return Route(func, path=path, methods=methods, middleware=middleware)
 
