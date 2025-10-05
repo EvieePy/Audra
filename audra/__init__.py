@@ -1,4 +1,4 @@
-"""Copyright 2025 EvieePy
+"""Copyright © 2025, EvieePy
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,5 +20,6 @@ from .application import *
 from .exceptions import *
 from .headers import *
 from .middleware import *
+from .responses import *
 from .routes import *
 from .types_ import Receive as Receive, Scope as Scope, Send as Send
