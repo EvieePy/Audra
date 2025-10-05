@@ -1,4 +1,4 @@
-"""Copyright 2025 EvieePy
+"""Copyright © 2025, EvieePy
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -108,9 +108,13 @@ class Audra:
         return inst
 
     def __init__(
-        self, *, build_on_startup: bool = True, middleware: Sequence[Middleware | ASGIMiddleware] | None = None
+        self,
+        *,
+        build_on_startup: bool = True,
+        middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        router: Router | None = None,
     ) -> None:
-        self._router: Router = Router()
+        self._router: Router = router or Router()
         self._build_on_startup = build_on_startup
         self._user_middleware = middleware or []
 
@@ -127,8 +131,6 @@ class Audra:
         prev = self._router
 
         for m in reversed(middlewares):
-            m.app = prev
-
             if isinstance(m, Middleware) and not m.__has_loaded__:
                 try:
                     await m.on_load()
@@ -136,6 +138,7 @@ class Audra:
                 except Exception as e:
                     raise MiddlewareLoadException(f"The Middleware {prev!r} failed to load.") from e
 
+            m.app = prev
             prev = m
 
         return prev
@@ -192,8 +195,19 @@ class Audra:
                 await send({"type": SendEvent.LSShutdownComplete.value})
                 break
 
-    def create_route(self, path: str, methods: list[HTTPMethod], *, callback: RouteCallbackT) -> None:
-        self._router._routes[path] = Route(callback, path=path, methods=methods)
+    def create_route(
+        self,
+        path: str,
+        callback: RouteCallbackT,
+        *,
+        methods: list[HTTPMethod] | None = None,
+        middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+    ) -> Route:
+        methods = methods or ["GET"]
+        route = Route(callback, path=path, methods=methods, middleware=middleware)
+        self._router.add_route(route)
+
+        return route
 
     def add_route(self, route: Route) -> None:
-        self._router._routes[route._path] = route
+        self._router.add_route(route)
