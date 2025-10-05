@@ -1,0 +1,9 @@
+
+Some part of this project include works copied from, derived from, or inspired by:
+
+starlette - https://www.starlette.dev/
+Copyright © 2018, [Encode OSS Ltd](https://www.encode.io/).
+Copyright © 2025, Marcelo Trylesinski.
+All Rights Reserved.
+Licensed under the BSD 3-Clause "New" or "Revised" License
+See https://github.com/Kludex/starlette/blob/main/LICENSE.md for license details.
