@@ -14,16 +14,16 @@ limitations under the License.
 """
 
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any, ClassVar, Protocol, Self
 
 
 class Converter[T](Protocol):
     pattern: ClassVar[str]
     regex: re.Pattern[str]
+    convert: Callable[..., Awaitable[T] | T]
 
     def compile(self, pattern: str, /) -> None: ...
-
-    def convert(self, value: str, /) -> T: ...
 
 
 class StrConverter(Converter[str]):
