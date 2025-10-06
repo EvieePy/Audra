@@ -15,20 +15,22 @@ limitations under the License.
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
 import re
 from typing import TYPE_CHECKING, Any, Self
 
 from .converters import BASE_CONVERTERS, Converter, StrConverter
 from .exceptions import HTTPMethodNotAllowed, HTTPNotFound, HTTPNotImplemented, MiddlewareLoadException, RouteAlreadyExists
 from .middleware.base import ASGIMiddleware, Middleware
-from .types_ import Callable, HTTPMethod, Receive, RouteCallbackT, Scope, Send
+from .types_ import Callable, ChildScopeT, HTTPMethod, Receive, RouteCallbackT, Scope, Send
 from .utils import get_route_path
 
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-__all__ = ("Route", "Router", "route")
+__all__ = ("Path", "Route", "Router", "route")
 
 
 type DecoRoute = Callable[[RouteCallbackT | Route], Route]
@@ -38,6 +40,13 @@ _pre = (
     r"(?P<parameter>\{\s*(?P<name>[a-zA-Z_][A-Za-z0-9\_\-]*)\s*(\:?\s*(?P<annotation>[a-zA-Z_][A-Za-z0-9\_\-]*)?\s*)\})\/?"
 )
 PARAM_RE: re.Pattern[str] = re.compile(_pre)
+
+
+@dataclasses.dataclass()
+class Path:
+    path: str
+    regex: re.Pattern[str]
+    converters: dict[str, Converter[Any]]
 
 
 class Route(Middleware):
@@ -64,15 +73,24 @@ class Route(Middleware):
 
         self._methods: set[HTTPMethod] = set(methods)
         self._middleware: list[Middleware | ASGIMiddleware] = list(middleware) if middleware else []
-        self._path = path
+        self._raw_path = path
         self._coro = coro
 
         self._converters: dict[str, Converter[Any]] = BASE_CONVERTERS.copy()
-        self.match_regex = self.compile_path(self._path)
+        self._path = self.compile_path(self._raw_path)
 
-    def compile_path(self, path: str, /) -> re.Pattern[str]:
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    @property
+    def raw_path(self) -> str:
+        return self._raw_path
+
+    def compile_path(self, path: str, /) -> Path:
         index: int = 0
         regex: str = "^"
+        converters: dict[str, Converter[Any]] = {}
 
         for match in PARAM_RE.finditer(path):
             escaped = re.escape(path[index : match.start()])
@@ -84,6 +102,7 @@ class Route(Middleware):
                 annotation = "str"
 
             converter: Converter[Any] = self._converters.get(annotation, StrConverter())
+            converters[name] = converter
 
             regex += f"{escaped.removesuffix('/')}/"
             regex += f"(?P<{name}>{converter.pattern})"
@@ -91,25 +110,45 @@ class Route(Middleware):
             index = match.end()
 
         regex += f"{path[index:]}$"
-        return re.compile(regex)
+        compiled = re.compile(regex)
 
-    def match(self, path: str, method: HTTPMethod) -> tuple[bool | None, dict[str, str]]:
-        params: dict[str, str] = {}
+        return Path(path=path, regex=compiled, converters=converters)
+
+    async def match(self, path: str, method: HTTPMethod) -> tuple[bool | None, ChildScopeT]:
+        params: dict[str, Any] = {}
+        child_scope: ChildScopeT = {"params": {}}
         # True: Full Match
         # False: No Match
         # None: Partial Match (E.g. Path matches but method isn't allowed)
 
         # First case can shortcut and doesn't need to do any parameter matching...
         if path == self._path:
-            return (True, params) if method in self._methods else (None, params)
+            return (True, child_scope) if method in self._methods else (None, child_scope)
 
-        match = self.match_regex.match(path)
+        # Try and match the path against the compiled path...
+        match = self._path.regex.match(path)
+
+        # Second case: there is no match...
         if not match:
-            return False, params
-        if method in self._methods:
-            return True, params
+            return False, child_scope
 
-        return None, params
+        # Third case: There is a match on the path but method is not available...
+        if method not in self._methods:
+            return None, child_scope
+
+        # Convert path parameters...
+        for name, value in match.groupdict().items():
+            converter = self._path.converters.get(name, StrConverter())
+
+            if asyncio.iscoroutinefunction(converter.convert):
+                param = await converter.convert(value)
+            else:
+                param = converter.convert(value)
+
+            params[name] = param
+
+        child_scope["params"] = params
+        return True, child_scope
 
     async def _build_middleware(self) -> None:
         prev = self
@@ -164,38 +203,40 @@ class Router(Middleware):
         # TODO: Check for duplicates...
         self._routes.append(route)
 
-    def resolve_path(self, path: str, method: HTTPMethod) -> tuple[Route | None, dict[str, str]]:
+    async def resolve_path(self, scope: Scope) -> tuple[Route | None, ChildScopeT]:
+        assert scope["type"] == "http"
+
         partial = False
+        path: str = get_route_path(scope)
+        method: HTTPMethod = scope["method"]
 
         for route in self._routes:
-            matched, params = route.match(path, method)
+            matched, child_scope = await route.match(path, method)
 
             if matched:
-                return route, params
+                return route, child_scope
 
             elif matched is None:
                 partial = True
 
         if partial:
+            # TODO: Headers...
             raise HTTPMethodNotAllowed
 
         return None, {}
-
-    def find_route(self, scope: Scope) -> tuple[Route | None, dict[str, str]]:
-        assert scope["type"] == "http"
-
-        path: str = get_route_path(scope)
-        method: HTTPMethod = scope["method"]
-        return self.resolve_path(path, method)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             return
 
-        route, params = self.find_route(scope)
+        route, child_scope = await self.resolve_path(scope)
         if not route:
             raise HTTPNotFound
 
+        original = scope.get("params", {})
+        original.update(child_scope.get("params", {}))
+
+        scope["params"] = original
         await route.invoke(scope, receive, send)
 
 
