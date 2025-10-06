@@ -16,7 +16,11 @@ limitations under the License.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
-from typing import Any, Concatenate, Literal, NotRequired, ParamSpec, Protocol, TypedDict
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, NotRequired, ParamSpec, Protocol, TypedDict
+
+
+if TYPE_CHECKING:
+    from .requests import Request
 
 
 __all__ = (
@@ -53,7 +57,7 @@ type Receive = Callable[[], Awaitable[Message]]
 type Send = Callable[[Message], Awaitable[None]]
 
 # TODO: vvv
-type RouteCallbackT = Callable[..., Awaitable[Any]]
+type RouteCallbackT = Callable[[Request], Awaitable[Any]]
 
 
 # TODO: Other types...
