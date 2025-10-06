@@ -70,6 +70,11 @@ type LifespanCallbackT = (
 type HTTPMethod = Literal["GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE", "POST", "PATCH", "CONNECT"]
 
 
+class ChildScopeT(TypedDict, total=False):
+    params: dict[str, Any]
+    query_params: dict[str, Any]
+
+
 class ASGIApp(Protocol):
     app: ASGIApp
 
@@ -100,6 +105,8 @@ class HTTPScope(TypedDict):
     client: ClientDataT | None
     server: ServerDataT | None
     state: NotRequired[State]
+    params: NotRequired[dict[str, Any]]
+    query_params: NotRequired[dict[str, Any]]
 
 
 class WebsocketScope(TypedDict):
