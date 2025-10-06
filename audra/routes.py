@@ -15,11 +15,12 @@ limitations under the License.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, Self
 
+from .converters import BASE_CONVERTERS, Converter, StrConverter
 from .exceptions import HTTPMethodNotAllowed, HTTPNotFound, HTTPNotImplemented, MiddlewareLoadException, RouteAlreadyExists
 from .middleware.base import ASGIMiddleware, Middleware
-from .responses import TestResponse
 from .types_ import Callable, HTTPMethod, Receive, RouteCallbackT, Scope, Send
 from .utils import get_route_path
 
@@ -33,12 +34,10 @@ __all__ = ("Route", "Router", "route")
 type DecoRoute = Callable[[RouteCallbackT | Route], Route]
 
 
-# NOTE: TESTING
-class TestReq:
-    def __init__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        self.scope = scope
-        self.receive = receive
-        self.send = send
+_pre = (
+    r"(?P<parameter>\{\s*(?P<name>[a-zA-Z_][A-Za-z0-9\_\-]*)\s*(\:?\s*(?P<annotation>[a-zA-Z_][A-Za-z0-9\_\-]*)?\s*)\})\/?"
+)
+PARAM_RE: re.Pattern[str] = re.compile(_pre)
 
 
 class Route(Middleware):
@@ -68,14 +67,49 @@ class Route(Middleware):
         self._path = path
         self._coro = coro
 
-    def match(self, path: str, method: HTTPMethod) -> bool | None:
+        self._converters: dict[str, Converter[Any]] = BASE_CONVERTERS.copy()
+        self.match_regex = self.compile_path(self._path)
+
+    def compile_path(self, path: str, /) -> re.Pattern[str]:
+        index: int = 0
+        regex: str = "^"
+
+        for match in PARAM_RE.finditer(path):
+            escaped = re.escape(path[index : match.start()])
+
+            name = match.group("name")
+            annotation = match.group("annotation")
+
+            if not annotation:
+                annotation = "str"
+
+            converter: Converter[Any] = self._converters.get(annotation, StrConverter())
+
+            regex += f"{escaped.removesuffix('/')}/"
+            regex += f"(?P<{name}>{converter.pattern})"
+
+            index = match.end()
+
+        regex += f"{path[index:]}$"
+        return re.compile(regex)
+
+    def match(self, path: str, method: HTTPMethod) -> tuple[bool | None, dict[str, str]]:
+        params: dict[str, str] = {}
         # True: Full Match
         # False: No Match
         # None: Partial Match (E.g. Path matches but method isn't allowed)
 
         # First case can shortcut and doesn't need to do any parameter matching...
         if path == self._path:
-            return True if method in self._methods else None
+            return (True, params) if method in self._methods else (None, params)
+
+        match = self.match_regex.match(path)
+        if not match:
+            return False, params
+        if method in self._methods:
+            return True, params
+
+        return None, params
 
     async def _build_middleware(self) -> None:
         prev = self
@@ -112,13 +146,14 @@ class Route(Middleware):
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         # NOTE: TESTING
-        req = TestReq(scope, receive, send)
-        resp = await self._coro(req)
+        # req = TestReq(scope, receive, send)
+        # resp = await self._coro(req)
 
-        if resp:
-            await resp(scope, receive, send)
-        else:
-            await (TestResponse(status=204))(scope, receive, send)
+        # if resp:
+        #     await resp(scope, receive, send)
+        # else:
+        #     await (TestResponse(status=204))(scope, receive, send)
+        ...
 
 
 class Router(Middleware):
@@ -129,30 +164,39 @@ class Router(Middleware):
         # TODO: Check for duplicates...
         self._routes.append(route)
 
-    def resolve_path(self, path: str) -> Route | None:
-        for route in self._routes:
-            ...
+    def resolve_path(self, path: str, method: HTTPMethod) -> tuple[Route | None, dict[str, str]]:
+        partial = False
 
-    def find_route(self, scope: Scope) -> Route | None:
+        for route in self._routes:
+            matched, params = route.match(path, method)
+
+            if matched:
+                return route, params
+
+            elif matched is None:
+                partial = True
+
+        if partial:
+            raise HTTPMethodNotAllowed
+
+        return None, {}
+
+    def find_route(self, scope: Scope) -> tuple[Route | None, dict[str, str]]:
         assert scope["type"] == "http"
 
         path: str = get_route_path(scope)
-        route = self.resolve_path(path)
+        method: HTTPMethod = scope["method"]
+        return self.resolve_path(path, method)
 
-        return route
-
-    # NOTE: Testing...
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             return
 
-        route_ = self.find_route(scope)
-        print(route_)
-
-        if not route_:
+        route, params = self.find_route(scope)
+        if not route:
             raise HTTPNotFound
 
-        await route_.invoke(scope, receive, send)
+        await route.invoke(scope, receive, send)
 
 
 class _RouteDecoMeta(type):
