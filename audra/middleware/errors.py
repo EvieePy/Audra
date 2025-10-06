@@ -97,8 +97,6 @@ class ExceptionMiddleware(Middleware):
         headers = [(b"content-type", b"text/html"), (b"content-disposition", b"inline")]
         html = HTML.format(STATUS=status, ERROR=details, ERROR_DESC=desc, STYLES=CSS, STATUS_URL=url)
 
-        LOGGER.error(error, exc_info=error)
-
         await send({"type": SendEvent.HTTPResponseStart.value, "status": status, "headers": headers})
         await send({"type": SendEvent.HTTPResponseBody.value, "body": html.encode()})
 

@@ -20,6 +20,7 @@ from .application import *
 from .exceptions import *
 from .headers import *
 from .middleware import *
+from .requests import *
 from .responses import *
 from .routes import *
 from .types_ import Receive as Receive, Scope as Scope, Send as Send
