@@ -68,6 +68,7 @@ __all__ = (
     "HTTPUriTooLong",
     "HTTPVariantAlsoNegotiates",
     "HTTPVersionNotSupported",
+    "InvalidRouterError",
     "MiddlewareLoadException",
     "RouteAlreadyExists",
 )
@@ -77,6 +78,9 @@ class AudraException(Exception): ...
 
 
 class MiddlewareLoadException(AudraException): ...
+
+
+class InvalidRouterError(AudraException): ...
 
 
 class RouteAlreadyExists(AudraException): ...
