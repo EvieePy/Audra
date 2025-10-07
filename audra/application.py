@@ -42,6 +42,8 @@ if TYPE_CHECKING:
         State,
     )
 
+    from .converters import Converter
+
 
 __all__ = ("Audra", "lifespan")
 
@@ -59,9 +61,6 @@ class lifespan:  # Reason: Decorator class...
     async def __call__(self, state: State | None) -> None:
         coro = self._coro(self._injected, state) if self._injected else self._coro(state)  # type: ignore
         await coro
-
-    async def __aenter__(self) -> Self:
-        return self
 
     @classmethod
     def startup(cls) -> Callable[[LifespanCallbackT], Self]:
@@ -87,7 +86,7 @@ class lifespan:  # Reason: Decorator class...
 
 class Audra:
     __lifespans__: ClassVar[dict[Literal["startup", "shutdown"], list[lifespan]]] = {"startup": [], "shutdown": []}
-    __middleware__: ClassVar[list[Middleware | ASGIMiddleware]] = []
+    __middleware__: ClassVar[Sequence[Middleware | ASGIMiddleware]] = []
     __stack__: ASGIApp | None = None
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
@@ -113,10 +112,16 @@ class Audra:
         build_on_startup: bool = True,
         middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
         router: Router | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
     ) -> None:
-        self._router: Router = router or Router()
+        router = router or Router(converters=converters)
+        if not isinstance(router, Middleware):  # type: ignore [Reason: Type-Checker doesn't understand safety]
+            raise InvalidRouterError("Router must be an instance of 'Middleware'.")
+
+        self._router: Router = router
         self._build_on_startup = build_on_startup
         self._user_middleware = middleware or []
+        self._build_on_startup = build_on_startup
 
     async def __call__(self, scope: Scope, receive: Receive | ReceiveLS, send: Send) -> Any:
         if scope["type"] == "lifespan":
@@ -155,9 +160,6 @@ class Audra:
             self.__stack__ = await self._build_middleware()
 
     async def _lifespan_handler(self, scope: LifespanScope, receive: ReceiveLS, send: Send) -> None:
-        startup_e: str | None = None
-        shutdown_e: str | None = None
-
         while True:
             message: LifespanMessageT = await receive()
             state: State | None = scope.get("state")
@@ -202,9 +204,10 @@ class Audra:
         *,
         methods: list[HTTPMethod] | None = None,
         middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
     ) -> Route:
         methods = methods or ["GET"]
-        route = Route(callback, path=path, methods=methods, middleware=middleware)
+        route = Route(callback, path=path, methods=methods, middleware=middleware, converters=converters)
         self._router.add_route(route)
 
         return route
