@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from functools import cache
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Self
 
 
 __all__ = ("BytesOrStr", "FrozenHeaders", "Headers")
@@ -29,8 +29,25 @@ type BytesOrStr = bytes | str
 class Headers(dict[str, BytesOrStr]):
     __slots__ = ()
 
-    def __init__(self, headers: dict[str, BytesOrStr] | None = None) -> None:
+    def __init__(self, headers: dict[str, BytesOrStr] | Headers | None = None) -> None:
         self.update({k.casefold(): v for k, v in (headers or {}).items()})
+
+    def _handle_duplicates(self, name: str, value: BytesOrStr, /) -> None:
+        name = name.replace("_", "-").casefold()
+
+        if name not in self.keys():
+            return super().__setitem__(name.casefold(), value)
+
+        old = super().__getitem__(name)
+        super().__setitem__(name.casefold(), f"{old}, {value}")
+
+    def append_to_field(self, name: str, value: BytesOrStr, /) -> Self:
+        self._handle_duplicates(name, value)
+        return self
+
+    def set_field(self, name: str, value: BytesOrStr, /) -> Self:
+        super().__setitem__(name, value)
+        return self
 
     def __str__(self) -> str:
         return str(dict(self))
@@ -38,7 +55,7 @@ class Headers(dict[str, BytesOrStr]):
     def __contains__(self, value: object, /) -> bool:
         return super().__contains__(value.casefold()) if isinstance(value, str) else False
 
-    def __missing__(self, name: str, /) -> None:
+    def __missing__(self, _: str, /) -> None:
         return None
 
     def __delitem__(self, name: str, /) -> None:
@@ -48,7 +65,8 @@ class Headers(dict[str, BytesOrStr]):
         return super().__getitem__(name.casefold())
 
     def __setitem__(self, name: str, value: BytesOrStr, /) -> None:
-        return super().__setitem__(name.casefold(), value)
+        name = name.replace("_", "-").casefold()
+        super().__setitem__(name, value)
 
     def __getattr__(self, name: str, /) -> Any:
         name = name.replace("_", "-").casefold()
@@ -60,7 +78,7 @@ class Headers(dict[str, BytesOrStr]):
 
     def __setattr__(self, name: str, value: BytesOrStr, /) -> None:
         name = name.replace("_", "-")
-        super().__setitem__(name.casefold(), value)
+        super().__setitem__(name, value)
 
     def __delattr__(self, name: str, /) -> None:
         name = name.replace("_", "-")
@@ -72,7 +90,7 @@ class Headers(dict[str, BytesOrStr]):
 
         return super().__ior__(other)
 
-    def as_tuple(self) -> list[tuple[bytes, bytes]]:
+    def raw(self) -> list[tuple[bytes, bytes]]:
         return [(k.encode("latin-1"), v.encode("latin-1") if isinstance(v, str) else v) for k, v in self.items()]
 
     def as_dict(self) -> MappingProxyType[str, BytesOrStr]:
