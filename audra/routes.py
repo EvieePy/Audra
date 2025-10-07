@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from .converters import BASE_CONVERTERS, Converter, StrConverter
 from .exceptions import HTTPMethodNotAllowed, HTTPNotFound, HTTPNotImplemented, MiddlewareLoadException, RouteAlreadyExists
+from .headers import FrozenHeaders
 from .middleware.base import ASGIMiddleware, Middleware
 from .types_ import Callable, ChildScopeT, HTTPMethod, Receive, RouteCallbackT, Scope, Send
 from .utils import get_route_path
@@ -36,9 +37,7 @@ __all__ = ("Path", "Route", "Router", "route")
 type DecoRoute = Callable[[RouteCallbackT | Route], Route]
 
 
-_pre = (
-    r"(?P<parameter>\{\s*(?P<name>[a-zA-Z_][A-Za-z0-9\_\-]*)\s*(\:?\s*(?P<annotation>[a-zA-Z_][A-Za-z0-9\_\-]*)?\s*)\})\/?"
-)
+_pre = r"(?P<parameter>\{\s*(?P<name>[a-zA-Z_][A-Za-z0-9_\-]*)\s*(\:?\s*(?P<annotation>[a-zA-Z_][A-Za-z0-9_\-]*)?\s*)\})\/?"
 PARAM_RE: re.Pattern[str] = re.compile(_pre)
 
 
@@ -54,7 +53,7 @@ class Route(Middleware):
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         inst = super().__new__(cls)
-        name = kwargs.get("name", args[0].__name__)
+        name = kwargs.get("name") or args[0].__name__
         inst.__route_name__ = name
 
         return inst
@@ -66,6 +65,8 @@ class Route(Middleware):
         path: str,
         methods: list[HTTPMethod],
         middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
+        name: str | None = None,
     ) -> None:
         methods = [m.upper() for m in methods]  # type: ignore [Reason: Type-Checker doesn't understand safety]
         if "GET" in methods:
@@ -76,8 +77,12 @@ class Route(Middleware):
         self._raw_path = path
         self._coro = coro
 
-        self._converters: dict[str, Converter[Any]] = BASE_CONVERTERS.copy()
+        self._converters: dict[str, Converter[Any]] = converters or {}
         self._path = self.compile_path(self._raw_path)
+
+    def update_converters(self, converters: dict[str, Converter[Any]]) -> None:
+        converters.update(self._converters)
+        self._converters.update(converters)
 
     @property
     def path(self) -> Path:
@@ -116,13 +121,13 @@ class Route(Middleware):
 
     async def match(self, path: str, method: HTTPMethod) -> tuple[bool | None, ChildScopeT]:
         params: dict[str, Any] = {}
-        child_scope: ChildScopeT = {"params": {}}
+        child_scope: ChildScopeT = {"params": params}
         # True: Full Match
         # False: No Match
         # None: Partial Match (E.g. Path matches but method isn't allowed)
 
         # First case can shortcut and doesn't need to do any parameter matching...
-        if path == self._path:
+        if path == self._raw_path:
             return (True, child_scope) if method in self._methods else (None, child_scope)
 
         # Try and match the path against the compiled path...
@@ -179,7 +184,8 @@ class Route(Middleware):
 
         method = scope["method"]
         if method not in self._methods:
-            raise HTTPMethodNotAllowed
+            headers = FrozenHeaders({"Allow": ", ".join(self._methods)})
+            raise HTTPMethodNotAllowed(headers=headers)
 
         await self.app(scope, receive, send)
 
@@ -196,17 +202,22 @@ class Route(Middleware):
 
 
 class Router(Middleware):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        converters: dict[str, Converter[Any]] | None = None,
+    ) -> None:
         self._routes: list[Route] = []
+        self._converters = converters or BASE_CONVERTERS.copy()
 
     def add_route(self, route: Route) -> None:
         # TODO: Check for duplicates...
+        route.update_converters(self._converters)
         self._routes.append(route)
 
     async def resolve_path(self, scope: Scope) -> tuple[Route | None, ChildScopeT]:
         assert scope["type"] == "http"
 
-        partial = False
+        partial: Route | None = None
         path: str = get_route_path(scope)
         method: HTTPMethod = scope["method"]
 
@@ -217,11 +228,11 @@ class Router(Middleware):
                 return route, child_scope
 
             elif matched is None:
-                partial = True
+                partial = route
 
-        if partial:
-            # TODO: Headers...
-            raise HTTPMethodNotAllowed
+        if partial is not None:
+            headers = FrozenHeaders({"Allow": ", ".join(partial._methods)})
+            raise HTTPMethodNotAllowed(headers=headers)
 
         return None, {}
 
@@ -254,9 +265,10 @@ class route(metaclass=_RouteDecoMeta):  # reason: class decorator...
         *,
         methods: list[HTTPMethod] = ["GET"],
         middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
     ) -> DecoRoute:
         def wrapper(func: RouteCallbackT | Route) -> Route:
-            return cls._wrapper(func, path=path, methods=methods, middleware=middleware)
+            return cls._wrapper(func, path=path, methods=methods, middleware=middleware, converters=converters)
 
         return wrapper
 
@@ -268,6 +280,7 @@ class route(metaclass=_RouteDecoMeta):  # reason: class decorator...
         path: str,
         methods: list[HTTPMethod],
         middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
     ) -> Route:
         if isinstance(func, Route):
             raise RouteAlreadyExists(
@@ -275,40 +288,70 @@ class route(metaclass=_RouteDecoMeta):  # reason: class decorator...
                 f"Consider using the '@route(path='{path}', methods=[...])' decorator to pass multiple methods instead."
             )
 
-        return Route(func, path=path, methods=methods, middleware=middleware)
+        return Route(func, path=path, methods=methods, middleware=middleware, converters=converters)
 
     @classmethod
-    def get(cls: type[route], path: str, *, middleware: Sequence[Middleware | ASGIMiddleware] | None = None) -> DecoRoute:
+    def get(
+        cls: type[route],
+        path: str,
+        *,
+        middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
+    ) -> DecoRoute:
         def wrapper(func: RouteCallbackT | Route) -> Route:
-            return cls._wrapper(func, path=path, methods=["GET"], middleware=middleware)
+            return cls._wrapper(func, path=path, methods=["GET"], middleware=middleware, converters=converters)
 
         return wrapper
 
     @classmethod
-    def post(cls: type[route], path: str, *, middleware: Sequence[Middleware | ASGIMiddleware] | None = None) -> DecoRoute:
+    def post(
+        cls: type[route],
+        path: str,
+        *,
+        middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
+    ) -> DecoRoute:
         def wrapper(func: RouteCallbackT | Route) -> Route:
-            return cls._wrapper(func, path=path, methods=["POST"], middleware=middleware)
+            return cls._wrapper(func, path=path, methods=["POST"], middleware=middleware, converters=converters)
 
         return wrapper
 
     @classmethod
-    def put(cls: type[route], path: str, *, middleware: Sequence[Middleware | ASGIMiddleware] | None = None) -> DecoRoute:
+    def put(
+        cls: type[route],
+        path: str,
+        *,
+        middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
+    ) -> DecoRoute:
         def wrapper(func: RouteCallbackT | Route) -> Route:
-            return cls._wrapper(func, path=path, methods=["PUT"], middleware=middleware)
+            return cls._wrapper(func, path=path, methods=["PUT"], middleware=middleware, converters=converters)
 
         return wrapper
 
     @classmethod
-    def delete(cls: type[route], path: str, *, middleware: Sequence[Middleware | ASGIMiddleware] | None = None) -> DecoRoute:
+    def delete(
+        cls: type[route],
+        path: str,
+        *,
+        middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
+    ) -> DecoRoute:
         def wrapper(func: RouteCallbackT | Route) -> Route:
-            return cls._wrapper(func, path=path, methods=["DELETE"], middleware=middleware)
+            return cls._wrapper(func, path=path, methods=["DELETE"], middleware=middleware, converters=converters)
 
         return wrapper
 
     @classmethod
-    def patch(cls: type[route], path: str, *, middleware: Sequence[Middleware | ASGIMiddleware] | None = None) -> DecoRoute:
+    def patch(
+        cls: type[route],
+        path: str,
+        *,
+        middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
+        converters: dict[str, Converter[Any]] | None = None,
+    ) -> DecoRoute:
         def wrapper(func: RouteCallbackT | Route) -> Route:
-            return cls._wrapper(func, path=path, methods=["PATCH"], middleware=middleware)
+            return cls._wrapper(func, path=path, methods=["PATCH"], middleware=middleware, converters=converters)
 
         return wrapper
 
