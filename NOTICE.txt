@@ -1,5 +1,5 @@
 
-Some part of this project include works copied from, derived from, or inspired by:
+Some parts of this project include works copied from, derived from, or inspired by:
 
 starlette - https://www.starlette.dev/
 Copyright © 2018, [Encode OSS Ltd](https://www.encode.io/).
