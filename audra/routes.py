@@ -77,12 +77,18 @@ class Route(Middleware):
         self._raw_path = path
         self._coro = coro
 
-        self._converters: dict[str, Converter[Any]] = converters or {}
+        converters_ = BASE_CONVERTERS | (converters or {})
+        self._converters: dict[str, Converter[Any]] = converters_
+
         self._path = self.compile_path(self._raw_path)
+        self._has_router: bool = False
 
     def update_converters(self, converters: dict[str, Converter[Any]]) -> None:
         converters.update(self._converters)
         self._converters.update(converters)
+
+        # Ensure converters are updated into our Path...
+        self.compile_path(self.raw_path)
 
     @property
     def path(self) -> Path:
@@ -211,8 +217,13 @@ class Router(Middleware):
 
     def add_route(self, route: Route) -> None:
         # TODO: Check for duplicates...
+        if route._has_router:
+            raise RouteAlreadyExists(f"The Route {route!r} has already been added.")
+
         route.update_converters(self._converters)
         self._routes.append(route)
+
+        route._has_router = True
 
     async def resolve_path(self, scope: Scope) -> tuple[Route | None, ChildScopeT]:
         assert scope["type"] == "http"
