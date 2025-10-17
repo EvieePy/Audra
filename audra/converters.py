@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, ClassVar, Protocol, Self
 
 
-class Converter[T](Protocol):
+class _BaseConverter[T](Protocol):
     pattern: ClassVar[str]
     regex: re.Pattern[str]
     convert: Callable[..., Awaitable[T] | T]
@@ -26,8 +26,7 @@ class Converter[T](Protocol):
     def compile(self, pattern: str, /) -> None: ...
 
 
-class StrConverter(Converter[str]):
-    pattern = "[^/]+"
+class Converter[T](_BaseConverter[T]):
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         inst = super().__new__(cls)
@@ -37,13 +36,34 @@ class StrConverter(Converter[str]):
 
         return inst
 
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(regex={self.regex.pattern!r})"
+    
+    def compile(self, pattern: str, /) -> None:
+        raise NotImplementedError("Implementations of Converter must implement this method.")
+
+
+class StrConverter(Converter[str]):
+    pattern = "[^/]+"
+
     def compile(self, pattern: str, /) -> None:
         self.regex = re.compile(pattern)
 
     def convert(self, value: str, /) -> str:
         return str(value)
+    
+
+class IntConverter(Converter[int]):
+    pattern = r"[\d]+"
+    
+    def compile(self, pattern: str) -> None:
+        self.regex = re.compile(pattern)
+        
+    def convert(self, value: str, /) -> int:
+        return int(value)
 
 
 BASE_CONVERTERS: dict[str, Converter[Any]] = {
     "str": StrConverter(),
+    "int": IntConverter(),
 }
