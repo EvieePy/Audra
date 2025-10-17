@@ -27,7 +27,6 @@ class _BaseConverter[T](Protocol):
 
 
 class Converter[T](_BaseConverter[T]):
-
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         inst = super().__new__(cls)
 
@@ -38,7 +37,7 @@ class Converter[T](_BaseConverter[T]):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(regex={self.regex.pattern!r})"
-    
+
     def compile(self, pattern: str, /) -> None:
         raise NotImplementedError("Implementations of Converter must implement this method.")
 
@@ -51,14 +50,14 @@ class StrConverter(Converter[str]):
 
     def convert(self, value: str, /) -> str:
         return str(value)
-    
+
 
 class IntConverter(Converter[int]):
     pattern = r"[\d]+"
-    
+
     def compile(self, pattern: str) -> None:
         self.regex = re.compile(pattern)
-        
+
     def convert(self, value: str, /) -> int:
         return int(value)
 
