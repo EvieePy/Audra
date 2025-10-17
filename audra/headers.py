@@ -122,3 +122,6 @@ class FrozenHeaders(Headers):
     @cache
     def as_dict(self) -> MappingProxyType[str, BytesOrStr]:  # type: ignore
         return MappingProxyType(self)
+
+    def mutable_copy(self) -> Headers:
+        return Headers(self)
