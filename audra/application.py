@@ -15,6 +15,7 @@ limitations under the License.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self
 
@@ -39,7 +40,7 @@ if TYPE_CHECKING:
         RouteCallbackT,
         Scope,
         Send,
-        State,
+        StateT,
     )
 
     from .converters import Converter
@@ -58,7 +59,7 @@ class lifespan:  # Reason: Decorator class...
         self.type_: Literal["startup", "shutdown", "special"] = type_
         self._coro = coro
 
-    async def __call__(self, state: State | None) -> None:
+    async def __call__(self, state: StateT | None) -> None:
         coro = self._coro(self._injected, state) if self._injected else self._coro(state)  # type: ignore
         await coro
 
@@ -113,6 +114,7 @@ class Audra:
         middleware: Sequence[Middleware | ASGIMiddleware] | None = None,
         router: Router | None = None,
         converters: dict[str, Converter[Any]] | None = None,
+        serializer: Callable[[bytes], dict[str, Any]] | None = None,
     ) -> None:
         router = router or Router(converters=converters)
         if not isinstance(router, Middleware):  # type: ignore [Reason: Type-Checker doesn't understand safety]
@@ -122,6 +124,7 @@ class Audra:
         self._build_on_startup = build_on_startup
         self._user_middleware = middleware or []
         self._build_on_startup = build_on_startup
+        self._serializer: Callable[[bytes], dict[str, Any]] = serializer or json.loads
 
     async def __call__(self, scope: Scope, receive: Receive | ReceiveLS, send: Send) -> Any:
         if scope["type"] == "lifespan":
@@ -149,20 +152,22 @@ class Audra:
         return prev
 
     async def _handle_http(self, scope: HTTPScope, receive: Receive, send: Send) -> None:
+        scope["app"] = self
+
         if not self.__stack__:
             self.__stack__ = await self._build_middleware()
 
         await self.__stack__(scope, receive, send)
 
     @lifespan._special()
-    async def _startup(self, state: State) -> None:
+    async def _startup(self, state: StateT) -> None:
         if self._build_on_startup and not self.__stack__:
             self.__stack__ = await self._build_middleware()
 
     async def _lifespan_handler(self, scope: LifespanScope, receive: ReceiveLS, send: Send) -> None:
         while True:
             message: LifespanMessageT = await receive()
-            state: State | None = scope.get("state")
+            state: StateT | None = scope.get("state")
             received = ReceiveEvent(message["type"])
 
             if received is ReceiveEvent.LSStartup:
