@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, NotRequired, ParamS
 
 
 if TYPE_CHECKING:
+    from .application import Audra
     from .requests import Request
 
 
@@ -41,7 +42,7 @@ P = ParamSpec("P")
 type PortT = int
 type HostT = str
 
-type RawHeadersT = Iterable[tuple[bytes]]  # TODO: Check actual data... vvv
+type RawHeadersT = list[tuple[bytes, bytes]]  # TODO: Check actual data... vvv
 type ClientDataT = tuple[HostT, PortT]
 type ServerDataT = tuple[HostT, PortT | None]
 
@@ -49,7 +50,7 @@ type ServerDataT = tuple[HostT, PortT | None]
 type LifespanMessageT = LifespanStartupMessage | LifespanShutdownMessage
 
 type Scope = HTTPScope | WebsocketScope | LifespanScope
-type State = dict[str, Any]
+type StateT = dict[str, Any]
 type Message = dict[str, Any]
 
 type ReceiveLS = Callable[[], Awaitable[LifespanMessageT]]
@@ -63,8 +64,8 @@ type RouteCallbackT = Callable[[Request], Awaitable[Any]]
 # TODO: Other types...
 # NOTE: Injection type...
 type LifespanCallbackT = (
-    Callable[Concatenate[Any, State | None, ...], Coroutine[Any, Any, None]]
-    | Callable[Concatenate[State | None, ...], Coroutine[Any, Any, None]]
+    Callable[Concatenate[Any, StateT | None, ...], Coroutine[Any, Any, None]]
+    | Callable[Concatenate[StateT | None, ...], Coroutine[Any, Any, None]]
 )
 
 type HTTPMethod = Literal["GET", "HEAD", "OPTIONS", "TRACE", "PUT", "DELETE", "POST", "PATCH", "CONNECT"]
@@ -104,9 +105,10 @@ class HTTPScope(TypedDict):
     headers: RawHeadersT
     client: ClientDataT | None
     server: ServerDataT | None
-    state: NotRequired[State]
+    state: NotRequired[StateT]
     params: NotRequired[dict[str, Any]]
     query_params: NotRequired[dict[str, Any]]
+    app: NotRequired[Audra]
 
 
 class WebsocketScope(TypedDict):
@@ -122,13 +124,13 @@ class WebsocketScope(TypedDict):
     client: ClientDataT | None
     server: ServerDataT | None
     subprotocols: Iterable[str]
-    state: NotRequired[State]
+    state: NotRequired[StateT]
 
 
 class LifespanScope(TypedDict):
     type: Literal["lifespan"]
     asgi: HTTPASGI
-    state: NotRequired[State]
+    state: NotRequired[StateT]
 
 
 class LifespanStartupMessage(TypedDict):
