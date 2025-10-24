@@ -23,4 +23,5 @@ from .middleware import *
 from .requests import *
 from .responses import *
 from .routes import *
+from .state import State as State
 from .types_ import Receive as Receive, Scope as Scope, Send as Send
