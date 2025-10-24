@@ -86,6 +86,9 @@ class InvalidRouterError(AudraException): ...
 class RouteAlreadyExists(AudraException): ...
 
 
+class ClientDisconnected(AudraException): ...
+
+
 class BaseHTTPException(AudraException):
     status: int
 
