@@ -15,9 +15,14 @@ limitations under the License.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import cache
 from types import MappingProxyType
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
+
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 __all__ = ("BytesOrStr", "FrozenHeaders", "Headers")
@@ -29,8 +34,28 @@ type BytesOrStr = bytes | str
 class Headers(dict[str, BytesOrStr]):
     __slots__ = ()
 
-    def __init__(self, headers: dict[str, BytesOrStr] | Headers | None = None) -> None:
-        self.update({k.casefold(): v for k, v in (headers or {}).items()})
+    def __init__(
+        self, headers: dict[str, BytesOrStr] | Headers | Sequence[tuple[bytes | str, bytes | str]] | None = None
+    ) -> None:
+        if not headers:
+            return
+
+        if isinstance(headers, dict):
+            self.update({k.casefold(): v for k, v in headers.items()})
+        elif isinstance(headers, Headers):
+            self.update(headers.as_dict())
+        else:
+            update: dict[str, str] = {}
+
+            for pair in headers:
+                name_b = pair[0]
+                value_b = pair[1]
+
+                name = name_b.decode() if isinstance(name_b, bytes) else name_b
+                value = value_b.decode() if isinstance(value_b, bytes) else value_b
+                update[name] = value
+
+            self.update(update)
 
     def _handle_duplicates(self, name: str, value: BytesOrStr, /) -> None:
         name = name.replace("_", "-").casefold()
@@ -100,7 +125,7 @@ class Headers(dict[str, BytesOrStr]):
 class FrozenHeaders(Headers):
     __slots__ = ()
 
-    def __init__(self, headers: dict[str, BytesOrStr]) -> None:
+    def __init__(self, headers: dict[str, BytesOrStr] | Sequence[tuple[bytes, bytes]]) -> None:
         super().__init__(headers)
 
     def __hash__(self) -> int:  # type: ignore
