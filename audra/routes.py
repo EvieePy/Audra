@@ -244,7 +244,7 @@ class Route(Middleware):
             headers = FrozenHeaders({"Allow": ", ".join(self._methods)})
             raise HTTPMethodNotAllowed(headers=headers)
 
-        await self.app(scope, receive, send)
+        await self.next(scope, receive, send)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         # TODO: ...
