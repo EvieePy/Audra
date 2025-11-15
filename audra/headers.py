@@ -57,17 +57,17 @@ class Headers(dict[str, BytesOrStr]):
 
             self.update(update)
 
-    def _handle_duplicates(self, name: str, value: BytesOrStr, /) -> None:
+    def _handle_duplicates(self, name: str, value: BytesOrStr, /, *, separator: str = ",") -> None:
         name = name.replace("_", "-").casefold()
 
         if name not in self.keys():
             return super().__setitem__(name.casefold(), value)
 
         old = super().__getitem__(name)
-        super().__setitem__(name.casefold(), f"{old}, {value}")
+        super().__setitem__(name.casefold(), f"{old}{separator} {value}")
 
-    def append_to_field(self, name: str, value: BytesOrStr, /) -> Self:
-        self._handle_duplicates(name, value)
+    def append_to_field(self, name: str, value: BytesOrStr, /, *, separator: str = ",") -> Self:
+        self._handle_duplicates(name, value, separator=separator)
         return self
 
     def set_field(self, name: str, value: BytesOrStr, /) -> Self:
