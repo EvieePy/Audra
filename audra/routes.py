@@ -17,19 +17,40 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import inspect
 import re
+import sys
 from typing import TYPE_CHECKING, Any, Self
 
 from .converters import BASE_CONVERTERS, Converter, StrConverter
-from .exceptions import HTTPMethodNotAllowed, HTTPNotFound, HTTPNotImplemented, MiddlewareLoadException, RouteAlreadyExists
+from .exceptions import (
+    HTTPInternalServerError,
+    HTTPMethodNotAllowed,
+    HTTPNotFound,
+    HTTPNotImplemented,
+    MiddlewareLoadException,
+    RouteAlreadyExists,
+)
 from .headers import FrozenHeaders
 from .middleware.base import ASGIMiddleware, Middleware
+from .requests import Request
+from .responses import *
 from .types_ import Callable, ChildScopeT, HTTPMethod, Receive, RouteCallbackT, Scope, Send
-from .utils import get_route_path
+from .utils import *
+
+
+PY_314 = sys.version_info >= (3, 14)
+try:
+    from string.templatelib import Template  # type: ignore
+
+    _has_template = True
+except ImportError:
+    _has_template = False
 
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Awaitable, Sequence
+
 
 __all__ = ("Path", "Route", "Router", "route")
 
@@ -89,6 +110,36 @@ class Route(Middleware):
 
         # Ensure converters are updated into our Path...
         self.compile_path(self.raw_path)
+
+    def _unwrap_coro(self, coro: Any, *, request: Request) -> Awaitable[Any]:
+        func = unwrap_function(coro)
+
+        if asyncio.iscoroutinefunction(func) or (callable(func) and asyncio.iscoroutinefunction(func.__call__)):
+            return func(request)
+
+        if not inspect.isawaitable(func):
+            raise TypeError("Route callback must be an awaitable or coroutine function.")
+
+        return func
+
+    def _check_falsey(self, resp: Any) -> bool:
+        return resp in FALSEY_RESP and not resp
+
+    def _check_template(self, returned: Any) -> bool:
+        if not PY_314:
+            return False
+
+        if not _has_template:
+            return False
+
+        return isinstance(returned, Template)  # type: ignore
+
+    def _sanitize_template(self, t: Any) -> ...:
+        if not PY_314:
+            raise RuntimeError("Cannot sanitize template strings. Python >= 3.14 required.")
+
+        if not _has_template:
+            raise RuntimeError("Cannot sanitize template strings. Python >= 3.14 required.")
 
     @property
     def path(self) -> Path:
@@ -196,15 +247,31 @@ class Route(Middleware):
         await self.app(scope, receive, send)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        # NOTE: TESTING
-        # req = TestReq(scope, receive, send)
-        # resp = await self._coro(req)
+        # TODO: ...
 
-        # if resp:
-        #     await resp(scope, receive, send)
-        # else:
-        #     await (TestResponse(status=204))(scope, receive, send)
-        ...
+        assert scope["type"] == "http"
+        resp: BaseResponse
+
+        request = Request(scope, receive, send)
+        returned: Any = await self._unwrap_coro(self._coro, request=request)
+
+        # Check Falsey strings, bytes; Other falsey types may be more appropriate as their type...
+        # E.g. {} would be empty JSON...
+        if self._check_falsey(returned):
+            resp = EmptyResponse()
+        elif isinstance(returned, BaseResponse):
+            resp = returned
+        elif isinstance(returned, (dict, list, tuple)):
+            # TODO: JSONResponse
+            resp = EmptyResponse()
+        elif isinstance(returned, (str, bytes)):
+            resp = PlainTextResponse(returned)
+        elif self._check_template(returned):
+            resp = HTMLResponse(self._sanitize_template(returned))
+        else:
+            raise HTTPInternalServerError
+
+        await resp(scope, receive, send)
 
 
 class Router(Middleware):
