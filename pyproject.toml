@@ -1,16 +1,24 @@
+[build-system]
+requires = ["uv_build>=0.9.9,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "audra"
+module-root = ""
+
 [project]
 name = "audra"
-dynamic = ["version"]
+version = "0.1.0a"
 dependencies = []
 requires-python = ">= 3.12"
 authors = [{name = "EvieePy", email = "evieepy@gmail.com"}]
 description = "A lightweight, type-safe ASGI in Python"
-readme = { file = "README", content-type = "text/markdown"}
+readme = { file = "README.md", content-type = "text/markdown"}
+license-files = ["LICEN[CS]E*"]
 license = "Apache-2.0"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
