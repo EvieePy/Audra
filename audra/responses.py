@@ -19,11 +19,35 @@ from .enums import SendEvent
 from .types_ import Receive, Scope, Send
 
 
-class TestResponse:
-    def __init__(self, body: str | None = None, status: int = 200) -> None:
-        self.body = body
+type BytesOrStr = bytes | str
+
+
+__all__ = ("BaseResponse", "EmptyResponse", "HTMLResponse", "PlainTextResponse", "Response")
+
+
+class BaseResponse:
+    media_type: str | None = None
+
+    def __init__(self, body: BytesOrStr | None = None, status: int = 200) -> None:
+        self.body = (body.encode() if isinstance(body, str) else body) or b""
         self.status = status
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> Any:
         await send({"type": SendEvent.HTTPResponseStart.value, "status": self.status})
-        await send({"type": SendEvent.HTTPResponseBody.value, "body": self.body.encode() if self.body else b""})
+        await send({"type": SendEvent.HTTPResponseBody.value, "body": self.body})
+
+
+class Response(BaseResponse): ...
+
+
+class EmptyResponse(BaseResponse):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(None, 204)
+
+
+class HTMLResponse(BaseResponse):
+    media_type = "text/html"
+
+
+class PlainTextResponse(BaseResponse):
+    media_type = "text/plain"
