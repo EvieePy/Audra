@@ -38,6 +38,11 @@ Repository = "https://github.com/EvieePy/Audra"
 Issues = "https://github.com/EvieePy/Audra/issues"
 Changelog = "..."
 
+[dependency-groups]
+dev = [
+    "ruff>=0.14.5",
+]
+
 [tool.ruff]
 line-length = 125
 target-version = "py312"
