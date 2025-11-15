@@ -52,7 +52,7 @@ __all__ = ("Audra", "lifespan")
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-class lifespan:  # Reason: Decorator class...
+class lifespan:  # Reason (lowercase): Decorator class...
     _injected: Audra | None = None
 
     def __init__(self, coro: LifespanCallbackT, /, *, type_: Literal["startup", "shutdown", "special"]) -> None:
