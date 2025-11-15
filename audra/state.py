@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 class State:
     _state: MutableMapping[str, Any]
-    __slots__ = ()
+    __slots__ = ("_state",)
 
     def __init__(self, state: Mapping[str, Any] | None = None) -> None:
         super().__setattr__("_state", state or {})
