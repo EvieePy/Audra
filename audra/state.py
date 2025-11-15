@@ -13,5 +13,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from __future__ import annotations
 
-class State: ...
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, MutableMapping
+
+
+class State:
+    _state: MutableMapping[str, Any]
+    __slots__ = ()
+
+    def __init__(self, state: Mapping[str, Any] | None = None) -> None:
+        super().__setattr__("_state", state or {})
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            self._state[name]
+        except KeyError:
+            raise AttributeError(f"{self!r} has no attribute {name!r}.")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        self._state[name] = value
+
+    def __delattr__(self, name: str) -> None:
+        try:
+            self._state.pop(name)
+        except KeyError:
+            raise AttributeError(f"{self!r} has no attribute {name!r}.")
