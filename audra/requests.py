@@ -20,13 +20,13 @@ from typing import TYPE_CHECKING, Any
 
 from .exceptions import ClientDisconnected
 from .headers import FrozenHeaders
+from .state import State
 
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
 
     from .application import Audra
-    from .state import State
     from .types_ import HTTPMethod, HTTPScope, Message, Receive, Send, WebsocketScope
 
 
@@ -34,19 +34,21 @@ __all__ = ("Request",)
 
 
 class BaseRequest:
-    def __init__(self, scope: HTTPScope | WebsocketScope, receive: Receive, send: Send) -> None:
+    def __init__(self, scope: HTTPScope | WebsocketScope, receive: Receive | None = None, send: Send | None = None) -> None:
         self._scope = scope
-        self._receive = receive
-        self._send = send
+        self._receive = receive or self._missing_receive
+        self._send = send or self._missing_send
 
         self._headers = FrozenHeaders(self._scope["headers"])
+        self._state = State(scope.get("state"))
 
     @property
     def scope(self) -> HTTPScope | WebsocketScope:
         return self._scope
 
     @property
-    def state(self) -> State: ...
+    def state(self) -> State:
+        return self._state
 
     @property
     def headers(self) -> FrozenHeaders:
@@ -55,6 +57,20 @@ class BaseRequest:
     @property
     def app(self) -> Audra | None:
         return self._scope.get("app")
+
+    async def _missing_receive(self) -> Message:
+        raise AttributeError(f"ASGI 'Receive' has not been made available to this {self!r}.")
+
+    async def _missing_send(self, message: Message) -> None:
+        raise AttributeError(f"ASGI 'Send' has not been made available to this {self!r}.")
+
+    @property
+    def receive(self) -> Receive:
+        return self._receive
+
+    @property
+    def send(self) -> Send:
+        return self._send
 
 
 class Request(BaseRequest):
@@ -65,6 +81,9 @@ class Request(BaseRequest):
         self._fetched: bool = False
         self._disconnected: bool = False
         self._body = b""
+
+    def __repr__(self) -> str:
+        return "HTTPRequest"
 
     @property
     def method(self) -> HTTPMethod:
