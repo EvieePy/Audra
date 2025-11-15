@@ -250,7 +250,7 @@ class Route(Middleware):
         # TODO: ...
 
         assert scope["type"] == "http"
-        resp: BaseResponse
+        resp: Response
 
         request = Request(scope, receive, send)
         returned: Any = await self._unwrap_coro(self._coro, request=request)
@@ -259,12 +259,14 @@ class Route(Middleware):
         # E.g. {} would be empty JSON...
         if self._check_falsey(returned):
             resp = EmptyResponse()
-        elif isinstance(returned, BaseResponse):
+        elif isinstance(returned, Response):
             resp = returned
         elif isinstance(returned, (dict, list, tuple)):
             # TODO: JSONResponse
             resp = EmptyResponse()
         elif isinstance(returned, (str, bytes)):
+            # TODO: Bytes/Memoryview as streaming?
+            # NOTE: Also AsyncGenerator resp?
             resp = PlainTextResponse(returned)
         elif self._check_template(returned):
             resp = HTMLResponse(self._sanitize_template(returned))
@@ -335,7 +337,7 @@ class _RouteDecoMeta(type):
         return cls.__call__(*args, **kwargs)
 
 
-class route(metaclass=_RouteDecoMeta):  # reason: class decorator...
+class route(metaclass=_RouteDecoMeta):  # reason (lowercase): class decorator...
     @classmethod
     def __call__(
         cls: type[route],
