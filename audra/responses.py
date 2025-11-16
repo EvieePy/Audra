@@ -13,16 +13,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from __future__ import annotations
+
+import json
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .enums import SendEvent
 from .headers import Headers
-from .types_ import Receive, Scope, Send
 from .utils import MISSING
 
 
-__all__ = ("EmptyResponse", "HTMLResponse", "PlainTextResponse", "Response")
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from .types_ import Receive, Scope, Send
+
+
+__all__ = ("EmptyResponse", "HTMLResponse", "JSONResponse", "PlainTextResponse", "Response")
 
 
 type BytesOrStr = bytes | str
@@ -100,3 +108,41 @@ class HTMLResponse(Response):
 
 class PlainTextResponse(Response):
     media_type = "text/plain"
+
+
+class JSONResponse(Response):
+    media_type = "application/json"
+
+    def __init__(
+        self,
+        body: Any | None = None,
+        *,
+        status: int = 200,
+        headers: dict[str, bytes | str] | Headers | Sequence[tuple[bytes | str, bytes | str]] | None = None,
+        seralizer: Callable[..., str | bytes] | None = None,
+    ) -> None:
+        if not seralizer:
+            self.serializer = json.dumps
+            self._default_json = True
+        else:
+            self.serializer = seralizer
+            self._default_json = False
+
+        super().__init__(body, status=status, headers=headers)
+
+    def encode(self, body: Any) -> bytes:
+        if not self._default_json:
+            data = self.serializer(body)
+        else:
+            data = self.serializer(
+                body,
+                ensure_ascii=False,
+                allow_nan=False,
+                indent=None,
+                separators=(",", ":"),
+            )
+
+        if isinstance(data, bytes):
+            return data
+
+        return bytes(data, encoding=self.charset)
